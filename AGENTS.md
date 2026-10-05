@@ -26,7 +26,7 @@ uv run python src/phira.py [--version 版本]      # 4. 打包 outputs/<版本>/
 ## 注意事项
 
 - **不要升级 `UnityPy==1.10.18`**——代码依赖该版本的精确 API(`get_filtered_objects`、`read_typetree`),新版本会挂。
-- `fsb5`(音乐提取)先从系统库、再从**当前工作目录**加载 `libogg.dll`/`libvorbis.dll`(见 `fsb5/utils.py` 的 `load_lib`),因此音乐提取必须在仓库根目录运行。这两个 DLL 依赖 **MSVCR120.dll(VC++ 2013 运行库)**,缺失时报 `LibraryNotFoundException: Could not load the library 'vorbis'`(实测);`save_music` 延迟导入 fsb5,未启用音乐时无需该依赖。
+- `fsb5`(音乐提取)的本地库查找由 `src/native_libs.py` 接管(`save_music` 中延迟生效):系统库优先,再按跨平台命名从仓库根目录/当前工作目录加载 `libogg`/`libvorbis`;`libvorbisenc` 缺失时按 fsb5 的回退语义使用 `libvorbis`(Windows 官方 DLL 已含编码符号),两者都不可用时给出各平台安装提示。Windows 的 DLL 依赖 **MSVCR120.dll(VC++ 2013 运行库)**,缺失时报 `LibraryNotFoundException`(实测);未启用音乐时无需该依赖。
 - `config.json` 的 `types` 控制提取的资源类型。`update` 计数全为 `0` 表示全量提取;否则只提取各分类最新 N 首(主线/单曲/支线按 `src/resource.py` 中 `MAIN_STORY_END`、`OTHER_SONG_END` 两个锚点曲 ID 分段,锚点跟随游戏曲目表,游戏更新后可能需要调整)。
 - 资源类型到输出目录的映射集中在 `src/common.py` 的 `RESOURCE_DIRS`,`resource.py` 写入与 `phira.py` 读取共用,不要再硬编码目录名。
 - `info/` 下的表格类数据为 CSV(`difficulty/info/collection/tmp`,UTF-8 带 BOM、Excel 友好;`gameInformation.py` 写,`resource.py`/`phira.py` 读,读取用 `utf-8-sig` 兼容 BOM);单列列表(`single/illustration/avatar/tips`)保持 txt。
@@ -34,7 +34,8 @@ uv run python src/phira.py [--version 版本]      # 4. 打包 outputs/<版本>/
 - `src/deprecated/` 下的脚本已损坏或过时(旧 tkinter/PyQt 界面、音频切分工具),仅作历史参考,不要使用。
 - typetree 是 `src/gameInformation.py` 解析 MonoBehaviour 的核心数据:优先 `typetree/<完整版本>.json`(如 `3.20.0.json`),其次 `typetree/index.json` 的版本映射(如 `3.19.5` → `3.20.0.json`,结构相同的版本无需复制副本),最后回退 `typetree/default.json`(当前 4.0.x 所用);游戏更新后需重新生成并放入 `typetree/`,详见 `typetree/README.md`。版本不匹配时会抛 `ValueError: Can't read ... bytes`。
 - `src/gameInformation.py` 兼容两种 APK 布局:`assets/bin/Data/data.unity3d`,或旧版的 `globalgamemanagers.assets` + `level0`。
-- `src/resource.py` 对第九章谢幕曲(硬编码 id `WhatdoyouwantmorethanaHappyending...`)有独立分支,处理其四难度差分曲绘(`_EZ/_HD/_IN/_AT` 后缀);`phira.py` 的曲绘 fallback 也支持 `<曲ID>_<难度>.png` 命名。
+- `src/resource.py` 对第九章谢幕曲(硬编码 id `WhatdoyouwantmorethanaHappyending...`)有独立分支,处理其四难度差分曲绘(`_EZ/_HD/_IN/_AT` 后缀);`phira.py` 的曲绘 fallback 也支持 `<曲ID>_<难度>.png` 命名。谱面键按 `/Chart_<难度>.json` 通用匹配,不限于两字母难度名,Legacy/SP 谱面同样会提取。
+- `src/phira.py` 打包 `.pez`:难度按 `difficulty.csv` 的槽位与谱师打包——槽位固定为 EZ/HD/IN/AT/Legacy(旧谱),空槽位用空字符串占位(仅去末尾空槽,避免错位);Legacy 旧谱(如 Aleph-0、ESM)标识为 `Legacy Lv.定数`(实际定数)。SP 谱面(如 4.0.1 的 Message)不登记在信息表中,按 `charts/<曲目>.0/SP.json` 是否存在打包为 `SP.pez`,难度标识固定 `SP Lv.?`(定数视为 0.0);谱师等未知信息用 `UK` 代替。
 - 解锁动画是 Unity `VideoClip`,有两类存放形式:① `assets/bin/Data/` 内(3.x 元数据在 `sharedassets*.assets`、4.x 在 `data.unity3d`;视频流在 `sharedassets*.resource` 中按 `m_ExternalResources` 的 offset/size 切分);② **Addressables 资产包** `assets/aa/Android/*.bundle`(如第九章的 `c9.video.Entrance to the Chaos_Intro`,由 UnityPy 直接读出 `m_VideoData`)。`src/videos.py` 两者都会提取(全量扫描全部 bundle 约 6 秒/版本,按内容自动命名 `.webm`/`.mp4`)。容器格式:3.x 与 4.0.0 的章节视频为 WebM(VP8/Vorbis),4.0.1 起为 MP4(H.264/AAC),与旧版内容不同、不参与硬链接。
 - 全量模式为每个资产新建 `Environment`,而增量模式(`[UPDATE]` 非零)所有选中资产共用一个 `Environment`——批量提取的内存行为不同。
 - 日志统一用 `log.init_console_logger()`(`src/log.py` 在窄编码控制台下用 `errors="replace"` 兜底);新脚本不要用 `print` 输出中文——GBK 重定向下会抛 `UnicodeEncodeError`,若发生在 `try` 内会被误捕,导致业务逻辑被跳过(`phira.py` 曾有 46 个 pez 因此缺失)。
