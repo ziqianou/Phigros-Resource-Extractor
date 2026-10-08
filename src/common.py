@@ -49,6 +49,20 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "sample_bytes": 65536,
     },
+    "phira": {
+        "info_format": "yml",
+        "generate_video": True,
+        "info": {
+            "preview_start": 0.0,
+            "aspect_ratio": 1.7777778,
+            "background_dim": 0.6,
+            "line_length": 6.0,
+            "offset": 0.0,
+            "tags": [],
+            "intro": "",
+            "hold_partial_cover": False,
+        },
+    },
     "webui": {
         "host": "127.0.0.1",
         "port": 8000,
